@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, status, Query, Path
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -11,7 +12,7 @@ costs = [
 ]
 
 # ایجاد هزینه جدید با id یکتا
-@app.post("/costs")
+@app.post("/costs", status_code= status.HTTP_201_CREATED)
 def create_cost(page_name:str, cost: float):
     new_cost = {"id": len(costs) + 1, "page": page_name, "cost": cost}
     costs.append(new_cost)
@@ -26,8 +27,8 @@ def retrieve_cost_list():
 def retrieve_cost_list(page_id: int):
     for cost in costs:
         if cost["id"] == page_id:
-            return cost
-    return {"message": "detail not found"}
+            return JSONResponse(cost)
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object Not Found")
 
 # ویرایش هزینه ی یک page با شناسه ی id
 @app.put("/costs/{page_id}")
@@ -35,14 +36,16 @@ def update_cost(page_id:int, new_cost:float):
     for cost in costs:
         if cost["id"] == page_id:
             cost["cost"] = new_cost
-            return {"message": f"Cost for page {cost["page"]} has changed into {cost["cost"]}"}
-    return {"message": "detail not found"}
+            message = f"Cost for page {cost["page"]} has changed into {cost["cost"]}"
+            return {"message": message}
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object Not Found")
 
 # حذف هزینه با id
-@app.delete("/costs/{page_id}")
+@app.delete("/costs/{page_id}", status_code= status.HTTP_204_NO_CONTENT)
 def delete_cost(page_id:int):
     for cost in costs:
         if cost["id"] == page_id:
+            message = f"Cost for page {cost["page"]} removed successfully"
             costs.remove(cost)
-            return {"message": f"Cost for page {cost["page"]} removed successfully"}
-    return {"message": "detail not found"}
+            return JSONResponse({"message": message})
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object Not Found")
