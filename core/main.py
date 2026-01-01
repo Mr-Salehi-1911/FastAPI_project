@@ -1,55 +1,93 @@
 from fastapi import FastAPI, HTTPException, status, Query, Path
 from fastapi.responses import JSONResponse
-from schemas import PriceCreateSchema, PriceUpdateSchema, PriceResponseSchema
-from typing import List
+from schemas import CustomerSchema
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from models import CustomerModel, ProductModel, OrderModel, OrderItemModel
+import random
 
 app = FastAPI()
 
-# This is a list of dicts for creating a website that contains prices for each page to create.
-prices = [
-    {"id": 1, "page": "main_page", "price": 5.5},
-    {"id": 2, "page": "products", "price": 12.45},
-    {"id": 3, "page": "orders", "price": 8.25},
-    {"id": 4, "page": "about us", "price": 2.75},
-    {"id": 5, "page": "contact us", "price": 3.75}
-]
+# connecting to db
+DATABASE_URL = "sqlite:///../sqlite.db"
 
-# ایجاد هزینه جدید برای ساخت پیج جدید با شناسه آیدی یکتا
-@app.post("/prices", response_model=PriceResponseSchema, status_code= status.HTTP_201_CREATED)
-def create_price(page : PriceCreateSchema):
-    new_price = {"id": len(prices) + 1, "page": page.page, "price": page.price}
-    prices.append(new_price)
-    return new_price
+engine = create_engine(DATABASE_URL, connect_args= {"check_same_thread": False})
 
-# دریافت هزینه ی ساخت همه ی پیج ها
-@app.get("/prices", response_model=List[PriceResponseSchema])
-def retrieve_price_list():
-    return prices
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# دریافت هزینه ی ساخت یک پیج
-@app.get("/prices/{id}", response_model=PriceResponseSchema)
-def retrieve_price_list(id: int):
-    for price in prices:
-        if price["id"] == id:
-            return JSONResponse(price)
+session = SessionLocal()
+
+@app.post("/customers", status_code=status.HTTP_201_CREATED)
+def create_customer(customer : CustomerSchema):
+    new_purchase_code = random.randint(1000, 9999)
+    new_customer = CustomerModel(full_name = customer.full_name, phone_number = customer.phone_number, purchase_code= new_purchase_code)
+    session.add(new_customer)
+    
+    message = f"A new customer added with name '{customer.full_name}' and purchase_code '{new_purchase_code}'"
+    session.commit()
+    return JSONResponse({"message": message})
+
+@app.get("/customers")
+def retrieve_customers():
+    response = session.query(CustomerModel).all()
+    return response
+
+@app.get("/customers/{id}")
+def retrieve_customer(id : int):
+    response = session.query(CustomerModel).filter_by(id= id).one_or_none()
+    return response
+
+@app.delete("/customers/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_customer(id : int):
+    response = session.query(CustomerModel).filter_by(id = id).one_or_none()
+    if response:
+        session.delete(response)
+        session.commit()
+        message = f"Customer {response.full_name} has been deleted from db successfully"
+        return JSONResponse({"message": message})
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object Not Found")
 
-# ویرایش هزینه ی ساخت یک پیج با شناسه آیدی یکتا
-@app.put("/prices/{id}")
-def change_price(page : PriceUpdateSchema):
-    for price in prices:
-        if price["id"] == page.id:
-            price["price"] = page.price
-            message = f"Price for page {price["page"]} has changed into {price["price"]} dollars"
-            return {"message": message}
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object Not Found")
+@app.post("/orders")
+def make_order(purchase_code : int = Query(description="Please enter your purchase code"),
+               orders : list[int] = Query(description= "Enter your product ids.")):
+    customers = session.query(CustomerModel).all()
+    for customer in customers:
+        if customer.purchase_code == purchase_code:
+            customer_id = customer.id
+            break
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="You don't have a purchase code.")
+    
 
-# حذف هزینه برای ساخت یک پیج با شناسه آیدی یکتا
-@app.delete("/prices/{id}", status_code= status.HTTP_204_NO_CONTENT)
-def delete_price(id : int):
-    for price in prices:
-        if price["id"] == id:
-            message = f"Price for page {price["page"]} removed successfully"
-            prices.remove(price)
-            return JSONResponse({"message": message})
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object Not Found")
+    
+
+
+    items = session.query(ProductModel).all()
+
+    
+    # counting total amount
+    total_amount= 0
+    for order in orders:
+        for item in items:
+            if order == item.id:
+                total_amount += item.price
+
+    total_amount = round(total_amount, 2)
+
+    new_order = OrderModel(customer_id= customer_id, total_amount= total_amount)
+
+    session.add(new_order)
+    session.commit()
+
+    for order in orders:
+        for item in items:
+            if order == item.id:
+                new_order_item = OrderItemModel(order_id= new_order.id, product_id= order)
+                session.add(new_order_item)
+                session.commit()
+    
+
+    
+
+    message = f"Order for customer {customer.full_name} with price {total_amount}$ created successfully"
+    return JSONResponse({"message": message})
