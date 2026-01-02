@@ -19,6 +19,7 @@ class CustomerModel(Base):
     full_name = Column(String(55))
     phone_number = Column(String(11), unique=True)
     purchase_code = Column(Integer, unique=True)
+    email = Column(String, nullable=True)
 
     orders = relationship("OrderModel", back_populates="customer")
 
